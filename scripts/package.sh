@@ -11,6 +11,66 @@ ARCH=${ARCH:-arm64}
 BOOT_OUT="${KERNEL_DIR}/out/arch/${ARCH}/boot"
 AK3="${WORKSPACE}/AnyKernel3"
 
+clone_module_source() {
+	local src=${1:?module source required}
+	local dir=${2:?target dir required}
+	local branch=${3:-}
+
+	if [[ "$src" == *.zip ]]; then
+		fetch "$src" "${WORKSPACE}/module.zip"
+		extract_archive "${WORKSPACE}/module.zip" "$dir"
+		return 0
+	fi
+
+	if [[ "$src" == *git* ]] || [[ "$src" == https://* ]] || [[ "$src" == git@* ]]; then
+		if [ -n "$branch" ]; then
+			retry 3 git clone -q --depth=1 -b "$branch" "$src" "$dir" \
+				|| die "failed to clone ${src} @ ${branch}"
+		else
+			retry 3 git clone -q --depth=1 "$src" "$dir" \
+				|| die "failed to clone ${src}"
+		fi
+		return 0
+	fi
+
+	# Treat anything else as a direct archive URL.
+	fetch "$src" "${WORKSPACE}/module.zip"
+	extract_archive "${WORKSPACE}/module.zip" "$dir"
+}
+
+embed_nethunter() {
+	is_true "${ENABLE_NETHUNTER:-false}" || return 0
+	group "Embedding NetHunter module"
+
+	local src=${NETHUNTER_SOURCE:?NETHUNTER_SOURCE required when ENABLE_NETHUNTER=true}
+	local branch=${NETHUNTER_BRANCH:-}
+	local module_path=${NETHUNTER_MODULE_PATH:-}
+	local staged="${WORKSPACE}/nethunter_staged"
+	local target="${AK3}/nethunter"
+
+	rm -rf "$staged" "$target"
+	clone_module_source "$src" "$staged" "$branch" || die "failed to fetch NetHunter source"
+
+	if [ -n "$module_path" ]; then
+		[ -d "${staged}/${module_path}" ] || die "module path '${module_path}' not found in NetHunter source"
+		cp -a "${staged}/${module_path}" "$target"
+	else
+		# The common NetHunter module layout is a rootfs-like tree. Copy it as-is.
+		cp -a "$staged" "$target"
+	fi
+
+	# If the module source contains a standard system/ tree, merge it into the
+	# flashable zip root as expected by kernel module overlays.
+	if [ -d "${target}/system" ]; then
+		cp -a "${target}/system/." "${AK3}/"
+		# keep a folder copy for debugging and manual recovery
+		cp -a "${target}/system" "${AK3}/nethunter-system"
+	fi
+
+	ok "NetHunter files staged (${target})"
+	endgroup
+}
+
 make_anykernel3() {
 	group "Building AnyKernel3 package"
 	rm -rf "$AK3"
@@ -34,8 +94,6 @@ make_anykernel3() {
 	else
 		retry 3 git clone -q --depth=1 https://github.com/osm0sis/AnyKernel3 "$AK3" \
 			|| die "failed to clone AnyKernel3"
-		# Device checks are meaningless here: we do not know the target's
-		# ro.product.device, and the zip is flashed deliberately by its builder.
 		sed -i 's/do.devicecheck=1/do.devicecheck=0/g' "${AK3}/anykernel.sh"
 		sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' "${AK3}/anykernel.sh"
 		sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' "${AK3}/anykernel.sh"
@@ -46,62 +104,10 @@ make_anykernel3() {
 	if is_true "${CHECK_DTBO_IS_OK:-false}"; then
 		cp "${BOOT_OUT}/dtbo.img" "${AK3}/"
 	fi
+
+	embed_nethunter
 	rm -rf "${AK3}/.git" "${AK3}/.github" "${AK3}/README.md"
 
 	ok "AnyKernel3 package assembled"
 	endgroup
 }
-
-make_boot_image() {
-	is_true "${BUILD_BOOT_IMG:-false}" || return 0
-	group "Repacking boot image"
-
-	local tools="${WORKSPACE}/tools"
-	[ -x "${tools}/unpack_bootimg.py" ] || [ -f "${tools}/unpack_bootimg.py" ] \
-		|| die "mkbootimg tools not found at ${tools}"
-
-	fetch "${SOURCE_BOOT_IMAGE:?SOURCE_BOOT_IMAGE required}" "${WORKSPACE}/boot-source.img"
-
-	cd "$WORKSPACE"
-	local fmt
-	fmt=$(python3 "${tools}/unpack_bootimg.py" --boot_img boot-source.img --format mkbootimg) \
-		|| die "failed to read the source boot image"
-	info "source boot image args: ${fmt}"
-
-	python3 "${tools}/unpack_bootimg.py" --boot_img boot-source.img >/dev/null \
-		|| die "failed to unpack the source boot image"
-
-	cp "${BOOT_OUT}/${KERNEL_IMAGE_NAME}" "${WORKSPACE}/out/kernel" \
-		|| die "could not stage the new kernel into the unpacked ramdisk"
-
-	# shellcheck disable=SC2086
-	python3 "${tools}/mkbootimg.py" $fmt -o boot.img || die "mkbootimg failed"
-	[ -s "${WORKSPACE}/boot.img" ] || die "boot.img was not produced"
-
-	ok "boot.img built ($(du -h "${WORKSPACE}/boot.img" | cut -f1))"
-	export_env MAKE_BOOT_IMAGE_IS_OK true
-	endgroup
-}
-
-write_summary() {
-	summary ""
-	summary "### Build artifacts"
-	summary ""
-	summary "| Artifact | Size |"
-	summary "| --- | --- |"
-	local f
-	for f in "${BOOT_OUT}/${KERNEL_IMAGE_NAME}" "${BOOT_OUT}/dtbo.img" "${WORKSPACE}/boot.img"; do
-		[ -f "$f" ] && summary "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"
-	done
-	[ -d "$AK3" ] && summary "| \`AnyKernel3\` (flashable zip) | $(du -sh "$AK3" | cut -f1) |"
-	summary ""
-}
-
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-	case "${1:-all}" in
-		anykernel3) make_anykernel3 ;;
-		bootimg)    make_boot_image ;;
-		all)        make_anykernel3; make_boot_image; write_summary ;;
-		*) die "unknown package step '$1'" ;;
-	esac
-fi
