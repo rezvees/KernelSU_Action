@@ -1,11 +1,23 @@
 #!/usr/bin/env bash
 # Resolve the build configuration, validate it, and export it to later steps.
+#
+# Resolution order (last wins):
+#   1. built-in defaults below
+#   2. the config file named by CONFIG_ENV (default: config.env)
+#   3. workflow_dispatch inputs, passed in as IN_<KEY> environment variables
+#
+# The old workflow parsed config.env with
+#     grep -w "$KEY" config.env | head -n1 | cut -d= -f2
+# which truncates any value containing '=', matches commented-out lines, and
+# matches a key that merely appears as a substring of a comment. That is why
+# EXTRA_CMDS had to use a ':' separator. Both forms are still accepted here,
+# but parsing is now anchored and comment-aware, so '=' in values is fine.
 
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
-. "(dirname "{BASH_SOURCE[0]}")/lib.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-CONFIG_FILE=\${CONFIG_ENV:-config.env}
+CONFIG_FILE=${CONFIG_ENV:-config.env}
 
 # --------------------------------------------------------------- defaults ---
 
@@ -47,7 +59,7 @@ declare -A DEFAULTS=(
 
 	# Patches
 	[ENABLE_SUSFS]="false"
-	[SUSFS_REPO]="https://gitlab.com"
+	[SUSFS_REPO]="https://gitlab.com/simonpunk/susfs4ksu.git"
 	[SUSFS_BRANCH]="auto"
 	[ENABLE_PATH_UMOUNT]="false"
 	[ENABLE_HIDE_STUFF]="false"
@@ -78,41 +90,3 @@ declare -A DEFAULTS=(
 	[ENABLE_CCACHE]="true"
 	[REMOVE_UNUSED_PACKAGES]="true"
 )
-
-# ------------------------------------------------------------- parsing ------
-
-group "Resolving Build Configuration"
-
-if [ -f "WORKSPACE/config/{CONFIG_FILE}" ]; then
-	info "Loading profile presets from: config/\${CONFIG_FILE}"
-	. "WORKSPACE/config/{CONFIG_FILE}"
-elif [ -f "WORKSPACE/{CONFIG_FILE}" ]; then
-	info "Loading configuration data from: \${CONFIG_FILE}"
-	. "WORKSPACE/{CONFIG_FILE}"
-else
-	warn "No external target configuration profile found: \${CONFIG_FILE}. Relying on defaults."
-fi
-
-for key in "\${!DEFAULTS[@]}"; do
-	val=""
-	in_var="IN_\${key}"
-	if [ -n "\${!in_var:-}" ]; then
-		val="\${!in_var}"
-		debug "Workflow dispatch option override: key='\${val}'"
-	elif [ -n "\${!key:-}" ]; then
-		val="\${!key}"
-	else
-		val="\({DEFAULTS[\)key]}"
-	fi
-
-	case "\${val}" in
-		"true" | "TRUE" | "1" | "y" | "Y") val="true" ;;
-		"false" | "FALSE" | "0" | "n" | "N") val="false" ;;
-	esac
-
-	export_env "key" "val"
-done
-
-ok "Environment variables mapped successfully."
-summary "| Config Target | \`${KERNEL_CONFIG:-unspecified}\` |"
-endgroup
