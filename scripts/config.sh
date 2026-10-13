@@ -190,3 +190,4 @@ endgroup
 if [ -z "${KERNEL_CONFIG:-}" ]; then
 	die "KERNEL_CONFIG is empty; set it in ${CONFIG_FILE} or pass via IN_KERNEL_CONFIG (workflow input 'config')"
 fi
+

@@ -72,22 +72,6 @@ ksu_field() { ksu_registry "$1" | cut -d'|' -f"$2"; }
 # build is not silently tracking a moving branch.
 ksu_default_is_branch() { [ "$1" = "resukisu" ]; }
 
-# Normalize common repository URL forms into owner/repo (no .git).
-# Accepts:
-#  - https://github.com/owner/repo
-#  - https://github.com/owner/repo.git
-#  - git@github.com:owner/repo.git
-# Returns owner/repo on stdout (or empty on failure).
-_normalize_owner_repo() {
-	local repo=$1 owner_repo
-	owner_repo=${repo#git@github.com:}
-	owner_repo=${owner_repo#https://github.com/}
-	owner_repo=${owner_repo%.git}
-	owner_repo=${owner_repo#/}
-	owner_repo=${owner_repo%/}
-	printf '%s' "$owner_repo"
-}
-
 # ---------------------------------------------------------------- install ---
 
 ksu_install() {
@@ -132,33 +116,15 @@ ksu_install() {
 	fi
 
 	# Run the variant's own installer.
-	local owner_repo
-	owner_repo=$(_normalize_owner_repo "$repo")
-	if [ -z "$owner_repo" ]; then
-		die "cannot derive owner/repo from '${repo}' for fetching setup.sh; please report this"
-	fi
-
-	local setup_url="https://raw.githubusercontent.com/${owner_repo}/${setup_ref}/kernel/setup.sh"
+	local setup_url="https://raw.githubusercontent.com/${repo#https://github.com/}/${setup_ref}/kernel/setup.sh"
 	info "running ${setup_url}"
 	(
 		cd "$KERNEL_DIR"
-		local tmp
-		tmp=$(mktemp)
-		if ! fetch_stdout "$setup_url" >"$tmp"; then
-			rm -f "$tmp"
-			die "${name} setup.sh download failed"
-		fi
-		if [ ! -s "$tmp" ]; then
-			rm -f "$tmp"
-			die "${name} setup.sh was empty"
-		fi
-
 		if [ -n "$ref" ]; then
-			bash "$tmp" "$ref"
+			fetch_stdout "$setup_url" | bash -s "$ref"
 		else
-			bash "$tmp"
+			fetch_stdout "$setup_url" | bash
 		fi
-		rm -f "$tmp"
 	) || die "${name} setup.sh failed"
 
 	# --- verify the installer actually did what it claims ------------------
@@ -303,3 +269,4 @@ ksu_hook_configs() {
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 	ksu_install "${KSU_VARIANT:-none}" "${KSU_REF:-}"
 fi
+

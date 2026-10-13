@@ -391,3 +391,4 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 		*) die "unknown patch step '$1'" ;;
 	esac
 fi
+

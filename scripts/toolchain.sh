@@ -179,3 +179,4 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 	setup_gcc
 	setup_mkbootimg
 fi
+

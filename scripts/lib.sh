@@ -241,3 +241,4 @@ kernel_version() {
 	[ -n "$v" ] && [ -n "$p" ] || return 1
 	printf '%s.%s' "$v" "$p"
 }
+
