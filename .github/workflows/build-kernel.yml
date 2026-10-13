@@ -1,11 +1,103 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      config:
+        description: "Kernel config"
+        required: true
+        default: "oneplus-sm8250"
+      ksu_variant:
+        description: "KernelSU variant"
+        required: false
+        default: ""
+      ksu_ref:
+        description: "KernelSU ref"
+        required: false
+        default: ""
+      hook_mode:
+        description: "Hook mode"
+        required: false
+        default: ""
+      susfs:
+        type: boolean
+        default: false
+      path_umount:
+        type: boolean
+        default: false
+      hide_stuff:
+        type: boolean
+        default: false
+      kpm:
+        type: boolean
+        default: false
+      extra_defconfig:
+        description: "Extra defconfig"
+        required: false
+        default: ""
+
 jobs:
   build:
+    name: Build ${{ inputs.config }}
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      device: ${{ steps.meta.outputs.device }}
+      build_time: ${{ steps.meta.outputs.build_time }}
+      ksu_name: ${{ steps.meta.outputs.ksu_name }}
+      ksu_version: ${{ steps.meta.outputs.ksu_version }}
+      kernel_release: ${{ steps.meta.outputs.kernel_release }}
+      susfs_version: ${{ steps.meta.outputs.susfs_version }}
+    env:
+      WORKSPACE: ${{ github.workspace }}/kernel_workspace
+      CONFIG_ENV: ${{ inputs.config }}
+      KERNEL_SOURCE: https://github.com/LineageOS/android_kernel_oneplus_sm8250
+      KERNEL_SOURCE_BRANCH: lineage-21
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+
+      # workflow inputs -> IN_* overrides consumed by scripts/config.sh
+      IN_KSU_VARIANT: ${{ inputs.ksu_variant }}
+      IN_KSU_REF: ${{ inputs.ksu_ref }}
+      IN_KSU_HOOK_MODE: ${{ inputs.hook_mode }}
+      IN_ENABLE_SUSFS: ${{ inputs.susfs }}
+      IN_ENABLE_PATH_UMOUNT: ${{ inputs.path_umount }}
+      IN_ENABLE_HIDE_STUFF: ${{ inputs.hide_stuff }}
+      IN_ENABLE_KPM: ${{ inputs.kpm }}
+      IN_EXTRA_DEFCONFIG: ${{ inputs.extra_defconfig }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Resolve configuration
         run: bash scripts/config.sh
+
+      - name: Validate kernel source config
+        run: |
+          : "${KERNEL_SOURCE:?KERNEL_SOURCE is not set}"
+          : "${KERNEL_SOURCE_BRANCH:?KERNEL_SOURCE_BRANCH is not set}"
+          echo "Using kernel source: ${KERNEL_SOURCE} @ ${KERNEL_SOURCE_BRANCH}"
+
+      - name: Free up disk space
+        if: env.REMOVE_UNUSED_PACKAGES == 'true'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Add swap space
+        run: |
+          sudo fallocate -l 8G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
 
       - name: Install build dependencies
         run: |
@@ -27,6 +119,40 @@ jobs:
 
       - name: Package flashable zip
         run: bash scripts/package.sh
+
+      - name: Meta (set job outputs)
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_PATH="$(ls "${WORKSPACE}/AnyKernel3"/*.zip 2>/dev/null | head -n 1 || true)"
+          echo "zip_path=${ZIP_PATH}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
+
+          ZIP_BASENAME="$(basename "${ZIP_PATH}" 2>/dev/null || echo "")"
+          KSU_NAME="$(echo "${ZIP_BASENAME}" | awk -F'-' '{print $3}' || echo "")"
+          KSU_VERSION="$(echo "${ZIP_BASENAME}" | awk -F'-' '{print $4}' | sed 's/\.zip$//' || echo "")"
+          echo "ksu_name=${KSU_NAME}" >> "$GITHUB_OUTPUT"
+          echo "ksu_version=${KSU_VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ -f "${WORKSPACE}/kernel_release.txt" ]; then
+            echo "kernel_release=$(tr -d '\r\n' < "${WORKSPACE}/kernel_release.txt")" >> "$GITHUB_OUTPUT"
+          else
+            echo "kernel_release=" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -f "${WORKSPACE}/susfs_version.txt" ]; then
+            echo "susfs_version=$(tr -d '\r\n' < "${WORKSPACE}/susfs_version.txt")" >> "$GITHUB_OUTPUT"
+          else
+            echo "susfs_version=" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -f "${WORKSPACE}/device.txt" ]; then
+            echo "device=$(tr -d '\r\n' < "${WORKSPACE}/device.txt")" >> "$GITHUB_OUTPUT"
+          else
+            echo "device=${CONFIG_ENV}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
