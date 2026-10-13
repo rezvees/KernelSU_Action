@@ -112,28 +112,19 @@ make_anykernel3() {
 	endgroup
 }
 
-# ========================================================
-# EXECUTION ROUTINE & COMPRESSION ENGINE
-# ========================================================
-
-# 1. Trigger the package creation and overlay embedding
+# --- Trigger assembly loop ---
 make_anykernel3
 
-# 2. Compress the assembled structure into a flashable target format
 group "Compressing AnyKernel3 output package"
 cd "$AK3"
 
-ZIP_NAME="OnePlus9R-Kernel-${KERNEL_VERSION:-4.19}_$(date +%Y%m%d-%H%M).zip"
+ZIP_NAME="OnePlus9R-Kernel-Release.zip"
 info "Archiving build components into: ${ZIP_NAME}"
 
-# Clean up older residual zips if present in the folder
 rm -f ./*.zip
-
-# Generate zip archive, ignoring documentation or structural git layers
 zip -r9 "$ZIP_NAME" ./* -x .git\* README.md \
     || die "Failed to create compressed AnyKernel3 flashable package"
 
-# Move the completed flashable payload zip back to the workspace root directory
 mv "$ZIP_NAME" "${WORKSPACE}/"
 
 ok "Package creation complete: ${WORKSPACE}/${ZIP_NAME}"
