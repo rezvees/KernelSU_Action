@@ -72,6 +72,23 @@ ksu_field() { ksu_registry "$1" | cut -d'|' -f"$2"; }
 # build is not silently tracking a moving branch.
 ksu_default_is_branch() { [ "$1" = "resukisu" ]; }
 
+# Normalize common repository URL forms into owner/repo (no .git).
+# Accepts:
+#  - https://github.com/owner/repo
+#  - https://github.com/owner/repo.git
+#  - git@github.com:owner/repo.git
+# Returns owner/repo on stdout (or empty on failure).
+_normalize_owner_repo() {
+	local repo=$1 owner_repo
+	owner_repo=${repo#git@github.com:}
+	owner_repo=${owner_repo#https://github.com/}
+	owner_repo=${owner_repo%.git}
+	# remove any leading/trailing slashes
+	owner_repo=${owner_repo#/}
+	owner_repo=${owner_repo%/}
+	printf '%s' "$owner_repo"
+}
+
 # ---------------------------------------------------------------- install ---
 
 ksu_install() {
@@ -116,15 +133,35 @@ ksu_install() {
 	fi
 
 	# Run the variant's own installer.
-	local setup_url="https://raw.githubusercontent.com/${repo#https://github.com/}/${setup_ref}/kernel/setup.sh"
+	# Normalize repo for raw.githubusercontent.com usage: need owner/repo
+	local owner_repo
+	owner_repo=$(_normalize_owner_repo "$repo")
+	if [ -z "$owner_repo" ]; then
+		die "cannot derive owner/repo from '${repo}' for fetching setup.sh; please report this"
+	fi
+
+	local setup_url="https://raw.githubusercontent.com/${owner_repo}/${setup_ref}/kernel/setup.sh"
 	info "running ${setup_url}"
 	(
 		cd "$KERNEL_DIR"
-		if [ -n "$ref" ]; then
-			fetch_stdout "$setup_url" | bash -s "$ref"
-		else
-			fetch_stdout "$setup_url" | bash
+		# Download to a temp file first to avoid piping empty content into bash
+		local tmp
+		tmp=$(mktemp)
+		if ! fetch_stdout "$setup_url" >"$tmp"; then
+			rm -f "$tmp"
+			die "${name} setup.sh download failed"
 		fi
+		if [ ! -s "$tmp" ]; then
+			rm -f "$tmp"
+			die "${name} setup.sh was empty"
+		fi
+
+		if [ -n "$ref" ]; then
+			bash "$tmp" "$ref"
+		else
+			bash "$tmp"
+		fi
+		rm -f "$tmp"
 	) || die "${name} setup.sh failed"
 
 	# --- verify the installer actually did what it claims ------------------
