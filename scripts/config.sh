@@ -105,13 +105,53 @@ _strip() {
 	printf '%s' "$s"
 }
 
+# Strip shell-style trailing comments while preserving '#' inside quoted values.
+_strip_inline_comment() {
+	local s=$1
+	local ch prev
+	local i in_single=0 in_double=0
+	for ((i = 0; i < ${#s}; i++)); do
+		ch="${s:i:1}"
+		prev=""
+		if (( i > 0 )); then prev="${s:i-1:1}"; fi
+
+		if [[ "$ch" == "'" && $in_double -eq 0 ]]; then
+			((in_single = 1 - in_single))
+			continue
+		fi
+		if [[ "$ch" == '"' && $in_single -eq 0 ]]; then
+			((in_double = 1 - in_double))
+			continue
+		fi
+		if [[ "$ch" == '#' && $in_single -eq 0 && $in_double -eq 0 ]]; then
+			if (( i == 0 )) || [[ "$prev" =~ [[:space:]] ]]; then
+				s="${s:0:i}"
+				break
+			fi
+		fi
+	done
+	printf '%s' "$s"
+}
+
 # read a single key from CONFIG_FILE (supports KEY=VALUE and KEY: VALUE)
 read_key_from_file() {
 	local key=$1 file=$2
 	[ -f "$file" ] || return 1
 
-	local val
-	val=$(sed -nE "s/^[[:space:]]*${key}[[:space:]]*[:=][[:space:]]*(.*)$/\\1/p" "$file" | sed -e 's/[[:space:]]*$//' | tail -n1 || true)
+	local line val=""
+	while IFS= read -r line || [ -n "$line" ]; do
+		line=${line%$'\r'}
+		line="${line#"${line%%[![:space:]]*}"}"
+		[ -z "$line" ] && continue
+		[[ "$line" =~ ^# ]] && continue
+
+		if [[ "$line" =~ ^${key}[[:space:]]*[:=][[:space:]]*(.*)$ ]]; then
+			val=${BASH_REMATCH[1]}
+			val=$(_strip_inline_comment "$val")
+			val=$(_strip "$val")
+		fi
+	done <"$file"
+
 	[ -n "$val" ] || return 1
 	printf '%s' "$val"
 	return 0
