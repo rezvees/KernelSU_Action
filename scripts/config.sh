@@ -5,6 +5,13 @@
 #   1. built-in defaults below
 #   2. the config file named by CONFIG_ENV (default: config.env)
 #   3. workflow_dispatch inputs, passed in as IN_<KEY> environment variables
+#
+# The old workflow parsed config.env with
+#     grep -w "\$KEY" config.env | head -n1 | cut -d= -f2
+# which truncates any value containing '=', matches commented-out lines, and
+# matches a key that merely appears as a substring of a comment. That is why
+# EXTRA_CMDS had to use a ':' separator. Both forms are still accepted here,
+# but parsing is now anchored and comment-aware, so '=' in values is fine.
 
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
@@ -108,7 +115,7 @@ for key in "\${!DEFAULTS[@]}"; do
 	in_var="IN_\${key}"
 	if [ -n "\${!in_var:-}" ]; then
 		val="\${!in_var}"
-		debug "Workflow input override: key='{val}'"
+		debug "Workflow input override: key='\${val}'"
 	elif [ -n "\${!key:-}" ]; then
 		val="\${!key}"
 	else
