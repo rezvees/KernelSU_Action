@@ -113,3 +113,11 @@ jobs:
 
       - name: Fetch kernel source
         run: bash scripts/source.sh
+      - name: Fetch kernel source
+        run: bash scripts/source.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OnePlus9R-Custom-Kernel
+          path: AnyKernel3/*.zip
