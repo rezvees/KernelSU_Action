@@ -51,7 +51,7 @@ jobs:
     env:
       WORKSPACE: ${{ github.workspace }}/kernel_workspace
       CONFIG_ENV: ${{ inputs.config }}
-      KERNEL_SOURCE: https://github.com
+      KERNEL_SOURCE: https://github.com/LineageOS/android_kernel_oneplus_sm8250
       KERNEL_SOURCE_BRANCH: lineage-21
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
@@ -113,18 +113,3 @@ jobs:
 
       - name: Fetch kernel source
         run: bash scripts/source.sh
-
-      - name: Run patches
-        run: bash scripts/patches.sh
-
-      - name: Build kernel
-        run: bash scripts/build.sh
-
-      - name: Package flashable output
-        run: bash scripts/package.sh
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: OnePlus9R-Custom-Kernel
-          path: AnyKernel3/*.zip
