@@ -109,8 +109,7 @@ _strip() {
 read_key_from_file() {
 	local key=$1 file=$2
 	[ -f "$file" ] || return 1
-	# anchored match, ignore leading/trailing spaces, ignore commented lines
-	# produce the last match so later lines override earlier ones
+
 	local val
 	val=$(sed -nE "s/^[[:space:]]*${key}[[:space:]]*[:=][[:space:]]*(.*)$/\\1/p" "$file" | sed -e 's/[[:space:]]*$//' | tail -n1 || true)
 	[ -n "$val" ] || return 1
@@ -123,26 +122,21 @@ read_key_from_file() {
 group "Resolving configuration (defaults -> ${CONFIG_FILE} -> IN_ overrides)"
 
 for key in "${!DEFAULTS[@]}"; do
-	# start from default
 	val=${DEFAULTS[$key]}
 
-	# override from config file if present
 	if file_val=$(read_key_from_file "$key" "$CONFIG_FILE"); then
 		val=$(_strip "$file_val")
 	fi
 
-	# override from environment IN_<KEY> (workflow inputs)
 	in_name="IN_${key}"
 	if [ -n "${!in_name:-}" ]; then
 		val=$(_strip "${!in_name}")
 	fi
 
-	# export into current shell and persist for later steps
 	export "${key}=$val"
 	export_env "$key" "$val"
 done
 
-# Print a short summary of the important values
 info "Resolved configuration (non-empty keys):"
 for key in KERNEL_SOURCE KERNEL_SOURCE_BRANCH KERNEL_CONFIG ARCH KERNEL_IMAGE_NAME KERNEL_NAME \
            KSU_VARIANT KSU_REF KSU_HOOK_MODE EXTRA_CMDS CUSTOM_CMDS; do
@@ -153,11 +147,6 @@ endgroup
 
 # -------------------------------------------------------------- validation ---
 
-# A minimal sanity check: KERNEL_CONFIG is required for a build.
 if [ -z "${KERNEL_CONFIG:-}" ]; then
 	die "KERNEL_CONFIG is empty; set it in ${CONFIG_FILE} or pass via IN_KERNEL_CONFIG (workflow input 'config')"
 fi
-
-# KERNEL_SOURCE and KERNEL_SOURCE_BRANCH may be empty if the workflow sets them in env,
-# but if they are required elsewhere, it's fine for later steps to validate them.
-# This script's role is to resolve the variables; further validation happens in the workflow.
