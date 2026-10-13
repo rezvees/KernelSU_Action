@@ -40,7 +40,9 @@ jobs:
   build:
     name: Build ${{ inputs.config }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
+    permissions:
+      contents: read
     outputs:
       device: ${{ steps.meta.outputs.device }}
       build_time: ${{ steps.meta.outputs.build_time }}
@@ -50,14 +52,13 @@ jobs:
       susfs_version: ${{ steps.meta.outputs.susfs_version }}
     env:
       WORKSPACE: ${{ github.workspace }}/kernel_workspace
-      CONFIG_ENV: ${{ inputs.config }}
+      CONFIG_ENV: ${{ format('config/{0}.env', inputs.config) }}
       KERNEL_SOURCE: https://github.com/LineageOS/android_kernel_oneplus_sm8250
       KERNEL_SOURCE_BRANCH: lineage-21
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
 
-      # workflow inputs -> IN_* overrides consumed by scripts/config.sh
       IN_KSU_VARIANT: ${{ inputs.ksu_variant }}
       IN_KSU_REF: ${{ inputs.ksu_ref }}
       IN_KSU_HOOK_MODE: ${{ inputs.hook_mode }}
@@ -114,8 +115,18 @@ jobs:
       - name: Fetch kernel source
         run: bash scripts/source.sh
 
+      - name: Prepare defconfig
+        run: bash scripts/build.sh defconfig
+
       - name: Build kernel
-        run: bash scripts/build.sh
+        run: bash scripts/build.sh compile
+
+      - name: Validate kernel image
+        run: bash scripts/build.sh check
+
+      - name: Apply patches
+        if: env.KSU_VARIANT != 'none'
+        run: bash scripts/patches.sh all
 
       - name: Package flashable zip
         run: bash scripts/package.sh
