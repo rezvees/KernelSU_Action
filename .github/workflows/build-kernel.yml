@@ -1,3 +1,41 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      config:
+        description: "Kernel config"
+        required: true
+        default: "oneplus-sm8250"
+      ksu_variant:
+        description: "KernelSU variant"
+        required: false
+        default: ""
+      ksu_ref:
+        description: "KernelSU ref"
+        required: false
+        default: ""
+      hook_mode:
+        description: "Hook mode"
+        required: false
+        default: ""
+      susfs:
+        type: boolean
+        default: false
+      path_umount:
+        type: boolean
+        default: false
+      hide_stuff:
+        type: boolean
+        default: false
+      kpm:
+        type: boolean
+        default: false
+      extra_defconfig:
+        description: "Extra defconfig"
+        required: false
+        default: ""
+
 jobs:
   build:
     name: Build ${{ inputs.config }}
