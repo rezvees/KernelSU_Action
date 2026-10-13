@@ -1,17 +1,5 @@
 #!/usr/bin/env bash
 # Resolve the build configuration, validate it, and export it to later steps.
-#
-# Resolution order (last wins):
-#   1. built-in defaults below
-#   2. the config file named by CONFIG_ENV (default: config.env)
-#   3. workflow_dispatch inputs, passed in as IN_<KEY> environment variables
-#
-# The old workflow parsed config.env with
-#     grep -w "\$KEY" config.env | head -n1 | cut -d= -f2
-# which truncates any value containing '=', matches commented-out lines, and
-# matches a key that merely appears as a substring of a comment. That is why
-# EXTRA_CMDS had to use a ':' separator. Both forms are still accepted here,
-# but parsing is now anchored and comment-aware, so '=' in values is fine.
 
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
@@ -95,55 +83,35 @@ declare -A DEFAULTS=(
 
 group "Resolving Build Configuration"
 
-# Load profile presets if target exists or fall back to configuration matrix
 if [ -f "WORKSPACE/config/{CONFIG_FILE}" ]; then
-	info "Loading targets from profile configuration: config/\${CONFIG_FILE}"
-	# shellcheck source=/dev/null
+	info "Loading profile presets from: config/\${CONFIG_FILE}"
 	. "WORKSPACE/config/{CONFIG_FILE}"
 elif [ -f "WORKSPACE/{CONFIG_FILE}" ]; then
-	info "Loading configuration data: \${CONFIG_FILE}"
-	# shellcheck source=/dev/null
+	info "Loading configuration data from: \${CONFIG_FILE}"
 	. "WORKSPACE/{CONFIG_FILE}"
 else
-	warn "No external target configuration found file: \${CONFIG_FILE}. Relying on defaults & runtime overrides."
+	warn "No external target configuration profile found: \${CONFIG_FILE}. Relying on defaults."
 fi
 
-# Override parameters matching workflow options input variables
 for key in "\${!DEFAULTS[@]}"; do
 	val=""
-	# Check for incoming environmental inputs mapping prefix e.g. IN_ENABLE_SUSFS -> ENABLE_SUSFS
 	in_var="IN_\${key}"
 	if [ -n "\${!in_var:-}" ]; then
 		val="\${!in_var}"
-		debug "Workflow input override: key='\${val}'"
+		debug "Workflow dispatch option override: key='\${val}'"
 	elif [ -n "\${!key:-}" ]; then
 		val="\${!key}"
 	else
 		val="\({DEFAULTS[\)key]}"
 	fi
 
-	# Standard normalization adjustments for true/false text parsing switches
 	case "\${val}" in
 		"true" | "TRUE" | "1" | "y" | "Y") val="true" ;;
 		"false" | "FALSE" | "0" | "n" | "N") val="false" ;;
 	esac
 
-	export_env "key" "{val}"
+	export_env "key" "val"
 done
-
-# Perform runtime cross-validation rules to protect compilation engines
-if [ "\({KSU_VARIANT}" = "next" ] \vert{}\vert{} [ "\){KSU_VARIANT}" = "kernelsu-next" ]; then
-	export_env KSU_VARIANT "kernelsu-next"
-	# Automatically default hook mode to inline overrides for next framework arrays
-	if [ "\${KSU_HOOK_MODE}" = "auto" ]; then
-		export_env KSU_HOOK_MODE "inline"
-	fi
-fi
-
-# Auto-enable baseline dependencies when structural options are checked
-if is_true "\({ENABLE_SUSFS}" \vert{}\vert{} is_true "\){ENABLE_HIDE_STUFF}"; then
-	export_env ENABLE_PATH_UMOUNT "true"
-fi
 
 ok "Environment variables mapped successfully."
 summary "| Config Target | \`${KERNEL_CONFIG:-unspecified}\` |"
