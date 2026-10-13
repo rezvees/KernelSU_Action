@@ -92,7 +92,7 @@ make_anykernel3() {
 				extract_archive "${WORKSPACE}/ak3.zip" "$AK3" ;;
 		esac
 	else
-		retry 3 git clone -q --depth=1 https://github.com "$AK3" \
+		retry 3 git clone -q --depth=1 https://github.com/osm0sis/AnyKernel3 "$AK3" \
 			|| die "failed to clone AnyKernel3"
 		sed -i 's/do.devicecheck=1/do.devicecheck=0/g' "${AK3}/anykernel.sh"
 		sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' "${AK3}/anykernel.sh"
@@ -111,21 +111,3 @@ make_anykernel3() {
 	ok "AnyKernel3 package assembled"
 	endgroup
 }
-
-# --- Trigger assembly loop ---
-make_anykernel3
-
-group "Compressing AnyKernel3 output package"
-cd "$AK3"
-
-ZIP_NAME="OnePlus9R-Kernel-Release.zip"
-info "Archiving build components into: ${ZIP_NAME}"
-
-rm -f ./*.zip
-zip -r9 "$ZIP_NAME" ./* -x .git\* README.md \
-    || die "Failed to create compressed AnyKernel3 flashable package"
-
-mv "$ZIP_NAME" "${WORKSPACE}/"
-
-ok "Package creation complete: ${WORKSPACE}/${ZIP_NAME}"
-endgroup
