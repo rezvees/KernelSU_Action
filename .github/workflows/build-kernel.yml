@@ -1,103 +1,11 @@
-name: Build Kernel
-
-on:
-  workflow_dispatch:
-    inputs:
-      config:
-        description: "Kernel config"
-        required: true
-        default: "oneplus-sm8250"
-      ksu_variant:
-        description: "KernelSU variant"
-        required: false
-        default: ""
-      ksu_ref:
-        description: "KernelSU ref"
-        required: false
-        default: ""
-      hook_mode:
-        description: "Hook mode"
-        required: false
-        default: ""
-      susfs:
-        type: boolean
-        default: false
-      path_umount:
-        type: boolean
-        default: false
-      hide_stuff:
-        type: boolean
-        default: false
-      kpm:
-        type: boolean
-        default: false
-      extra_defconfig:
-        description: "Extra defconfig"
-        required: false
-        default: ""
-
 jobs:
   build:
-    name: Build ${{ inputs.config }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    outputs:
-      device: ${{ steps.meta.outputs.device }}
-      build_time: ${{ steps.meta.outputs.build_time }}
-      ksu_name: ${{ steps.meta.outputs.ksu_name }}
-      ksu_version: ${{ steps.meta.outputs.ksu_version }}
-      kernel_release: ${{ steps.meta.outputs.kernel_release }}
-      susfs_version: ${{ steps.meta.outputs.susfs_version }}
-    env:
-      WORKSPACE: ${{ github.workspace }}/kernel_workspace
-      CONFIG_ENV: ${{ inputs.config }}
-      KERNEL_SOURCE: https://github.com/LineageOS/android_kernel_oneplus_sm8250
-      KERNEL_SOURCE_BRANCH: lineage-21
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_HARDLINK: "true"
-
-      # workflow inputs -> IN_* overrides consumed by scripts/config.sh
-      IN_KSU_VARIANT: ${{ inputs.ksu_variant }}
-      IN_KSU_REF: ${{ inputs.ksu_ref }}
-      IN_KSU_HOOK_MODE: ${{ inputs.hook_mode }}
-      IN_ENABLE_SUSFS: ${{ inputs.susfs }}
-      IN_ENABLE_PATH_UMOUNT: ${{ inputs.path_umount }}
-      IN_ENABLE_HIDE_STUFF: ${{ inputs.hide_stuff }}
-      IN_ENABLE_KPM: ${{ inputs.kpm }}
-      IN_EXTRA_DEFCONFIG: ${{ inputs.extra_defconfig }}
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Resolve configuration
         run: bash scripts/config.sh
-
-      - name: Validate kernel source config
-        run: |
-          : "${KERNEL_SOURCE:?KERNEL_SOURCE is not set}"
-          : "${KERNEL_SOURCE_BRANCH:?KERNEL_SOURCE_BRANCH is not set}"
-          echo "Using kernel source: ${KERNEL_SOURCE} @ ${KERNEL_SOURCE_BRANCH}"
-
-      - name: Free up disk space
-        if: env.REMOVE_UNUSED_PACKAGES == 'true'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          android: false
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: false
-
-      - name: Add swap space
-        run: |
-          sudo fallocate -l 8G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          free -h
 
       - name: Install build dependencies
         run: |
@@ -113,3 +21,16 @@ jobs:
 
       - name: Fetch kernel source
         run: bash scripts/source.sh
+
+      - name: Build kernel
+        run: bash scripts/build.sh
+
+      - name: Package flashable zip
+        run: bash scripts/package.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KernelSU-${{ inputs.config }}
+          path: |
+            ${{ github.workspace }}/kernel_workspace/AnyKernel3/*.zip
